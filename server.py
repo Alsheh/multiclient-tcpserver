@@ -1,21 +1,48 @@
 import socket
 import sys
 import argparse
+import json
 from thread import start_new_thread
 
 HOST = '' # all availabe interfaces
 PORT = 9999 # arbitrary non privileged port 
+formatter = None
+
+def json_data(data):
+    try:        
+        json_object = json.loads(data)
+        return '\n' + json.dumps(json_object, indent=2) + '\n'
+    except ValueError, e:
+        return data
+
+def plain_data(data):
+    return data
+
+def printer(data, addr):
+    print('[%(ip)s:%(port)s] %(data)s' % {
+        'ip': addr[0],
+        'port': str(addr[1]),
+        'data': formatter(data.strip())
+    })
 
 def arg_parser():
-    global PORT
+    global PORT, formatter
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--port",
                         type=int,
                         nargs=1,
                         help="specify port number on which server need to listen")
+    parser.add_argument("-j", "--json",
+                        action='store_true',
+                        help="json pretty print")
     args = vars(parser.parse_args())
     if args['port'] is not None:
         PORT = args['port'][0]
+    if args['json']:
+        formatter = json_data
+    else:
+        formatter = plain_data
+
 
 def client_thread(client, addr):
     client.send("Welcome to the Server. Type messages and press enter to send.\n")
@@ -23,13 +50,10 @@ def client_thread(client, addr):
         data = client.recv(1024)
         if not data:
             break
-        print('[%(ip)s:%(port)s] %(data)s' % {
-            'ip': addr[0],
-            'port': str(addr[1]),
-            'data': str(data.strip())
-        })
+        printer(data, addr)
         reply = "OK . . " + data
         client.sendall(reply)
+    printer('Connection closed.', addr)
     client.close()
 
 def run_server(s):
