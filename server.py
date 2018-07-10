@@ -2,10 +2,12 @@ import socket
 import sys
 import argparse
 import json
+from threading import Lock
 from thread import start_new_thread
 
 HOST = '' # all availabe interfaces
-PORT = 9999 # arbitrary non privileged port 
+PORT = 9999 # arbitrary non privileged port
+LOCK = Lock()
 formatter = None
 
 def json_data(data):
@@ -19,11 +21,13 @@ def plain_data(data):
     return data
 
 def printer(data, addr):
-    print('[%(ip)s:%(port)s] %(data)s' % {
-        'ip': addr[0],
-        'port': str(addr[1]),
-        'data': formatter(data.strip())
-    })
+    with LOCK:
+        sys.stdout.write('[%(ip)s:%(port)s] %(data)s\n' % {
+            'ip': addr[0],
+            'port': str(addr[1]),
+            'data': formatter(data.strip())
+        })
+        sys.stdout.flush()
 
 def arg_parser():
     global PORT, formatter
@@ -58,9 +62,9 @@ def client_thread(client, addr):
 
 def run_server(s):
     while True:
-        # blocking call, waits to accept a connection
+        # wait to accept a new connection (blocking call)
         conn, addr = s.accept()
-        print("[-] Connected to " + addr[0] + ":" + str(addr[1]))
+        printer('Connection established', addr)
         start_new_thread(client_thread, (conn, addr))
 
     
