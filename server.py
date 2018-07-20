@@ -1,6 +1,7 @@
 import socket
 import sys
 import argparse
+import re
 import json
 from threading import Lock
 from thread import start_new_thread
@@ -9,9 +10,34 @@ HOST = '' # all availabe interfaces
 PORT = 9999 # arbitrary non privileged port
 LOCK = Lock()
 formatter = None
+REGEX = re.compile('/test-(\d+)')
+PREV = 0
+#test = open('test.txt', 'w')
+DATA_Q  = ''
+
+def find_json_array(data):
+    stack = []
+    for i in range(len(data)):
+        c = data[i]
+        if c == '{':
+            stack.append(i)
+        elif c == '}' and len(stack) > 1:
+            stack.pop()
+        elif c == '}' and len(stack) == 1:
+            return stack.pop(), i+1
+    return 0, 0
+
+def get_json_array(data):
+    global DATA_Q
+    DATA_Q += data
+    start, end = find_json_array(DATA_Q)
+    json_array = DATA_Q[start:end]
+    DATA_Q = DATA_Q[end:]
+    return json_array
 
 def json_data(data):
-    try:        
+    try:
+        data = get_json_array(data)
         json_object = json.loads(data)
         return '\n' + json.dumps(json_object, indent=2) + '\n'
     except ValueError, e:
@@ -20,9 +46,22 @@ def json_data(data):
 def plain_data(data):
     return data
 
+def testLogrotate(data):
+    global PREV
+    results = REGEX.findall(data)
+    for number in results:
+        number = int(number)
+        if number-PREV != 1:
+            test.write('number: %d, PREV: %d, diff: %d\n' % (
+                number, PREV, number-PREV))
+            test.flush()
+        PREV = number
+
+
 def printer(data, addr):
-    with LOCK:
-        sys.stdout.write('[%(ip)s:%(port)s] %(data)s\n' % {
+    #testLogrotate(data)
+    with LOCK:            
+        sys.stdout.write('[%(ip)s:%(port)s] %(data)s\n\n' % {
             'ip': addr[0],
             'port': str(addr[1]),
             'data': formatter(data.strip())
@@ -51,13 +90,20 @@ def arg_parser():
 def client_thread(client, addr):
     client.send("Welcome to the Server. Type messages and press enter to send.\n")
     while True:
-        data = client.recv(1024)
+        try:
+            data = client.recv(2048)
+        except socket.error:
+            break
         if not data:
             break
         printer(data, addr)
         reply = "OK . . " + data
         client.sendall(reply)
-    printer('Connection closed.', addr)
+    print('[%(ip)s:%(port)s] %(data)s' % {
+        'ip': addr[0],
+        'port': str(addr[1]),
+        'data': 'Connection closed.'
+    })
     client.close()
 
 def run_server(s):
@@ -67,10 +113,10 @@ def run_server(s):
         printer('Connection established', addr)
         start_new_thread(client_thread, (conn, addr))
 
-    
+
 if __name__ == '__main__':
     arg_parser()
-    
+
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     except socket.error, msg:
@@ -91,3 +137,4 @@ if __name__ == '__main__':
     print("Listening...")
     run_server(s)
     s.close()
+    #test.close()
